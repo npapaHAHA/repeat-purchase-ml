@@ -1,0 +1,4 @@
+* text=auto
+*.cbm binary
+*.yml text eol=lf
+Dockerfile text eol=lf
