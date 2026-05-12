@@ -49,7 +49,7 @@ curl.exe --fail-with-body -H "Content-Type: application/json" --data-binary "@ex
 
 Результаты относятся к историческим данным одного магазина. Даты, размеры выборок и доли покупок есть в [отчёте](metrics.json).
 
-## Повторить обучение
+## Повторить обучение и запустить тесты
 
 В Windows запустите PowerShell с Python 3.13.
 
@@ -58,6 +58,7 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe download_data.py
 .\.venv\Scripts\python.exe train.py
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ~~~
 
 На macOS и Linux создайте окружение через `python3.13 -m venv .venv` и используйте `.venv/bin/python`.
@@ -69,5 +70,6 @@ $env:RETAIL_MODEL_PATH = 'artifacts/model.cbm'
 .\.venv\Scripts\python.exe -m uvicorn api:app
 ~~~
 
+Один тест проверяет, что заказы после даты прогноза влияют только на метку. Остальные проверяют загрузку модели и ответы на корректные и некорректные запросы. В [GitHub Actions](.github/workflows/ci.yml) после тестов запускается контейнер, где проверяются `/health` и `/predict` по HTTP.
 
 Исходные транзакции скачиваются из UCI Machine Learning Repository. Набор Daqing Chen опубликован под CC BY 4.0. [Online Retail II](https://doi.org/10.24432/C5CG6D)

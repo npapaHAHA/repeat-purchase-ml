@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Run Python tests
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m unittest discover -s tests -v
+      - name: Build Docker image
+        run: docker build --tag repeat-purchase-ml:ci .
+      - name: Check the container
+        run: |
+          docker run --detach --name repeat-purchase-ci --publish 127.0.0.1:8000:8000 repeat-purchase-ml:ci
+          curl --retry 30 --retry-all-errors --retry-delay 1 --retry-max-time 40 \
+            --max-time 3 --fail --silent --show-error http://127.0.0.1:8000/health
+          curl --fail --silent --show-error --max-time 10 \
+            --header 'Content-Type: application/json' \
+            --data-binary @example-request.json \
+            http://127.0.0.1:8000/predict > prediction.json
+          python -c 'import json; p = json.load(open("prediction.json"))["repeat_purchase_probability"]; assert abs(p - 0.420565) < 1e-5, p'
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs repeat-purchase-ci || true
+      - name: Remove test container
+        if: always()
+        run: docker rm --force repeat-purchase-ci || true
