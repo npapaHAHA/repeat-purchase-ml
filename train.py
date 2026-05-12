@@ -1,9 +1,20 @@
+import argparse
+import json
 import sqlite3
 from contextlib import closing
 from io import BytesIO
+from pathlib import Path
 from zipfile import ZipFile
 
+import joblib
 import pandas as pd
+from catboost import CatBoostClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+from features import FEATURES
 
 
 HORIZON = pd.Timedelta(days=30)
@@ -82,3 +93,69 @@ def build_snapshots(orders):
             snapshot = pd.read_sql_query(SNAPSHOT_QUERY, connection, params=parameters)
             snapshots.append(snapshot.assign(cutoff=cutoff))
     return dates, pd.concat(snapshots, ignore_index=True)
+
+
+def evaluate(rows, scores):
+    return {
+        "average_precision": float(average_precision_score(rows["target"], scores)),
+        "roc_auc": float(roc_auc_score(rows["target"], scores)),
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument("--output-dir", type=Path, default=Path("artifacts"))
+    args = parser.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    dates, rows = build_snapshots(load_orders(args.data_dir))
+    train = rows[rows["cutoff"] < dates[-4]]
+    validation = rows[rows["cutoff"].isin(dates[-4:-2])]
+    test = rows[rows["cutoff"].isin(dates[-2:])]
+    models = {
+        "logistic_regression": make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000)),
+        "catboost": CatBoostClassifier(
+            iterations=400, depth=5, learning_rate=0.05, random_seed=42,
+            verbose=False, allow_writing_files=False, thread_count=4,
+        ),
+    }
+    validation_metrics = {"constant_baseline": evaluate(validation, [0] * len(validation))}
+    for name, model in models.items():
+        model.fit(train[FEATURES], train["target"])
+        validation_metrics[name] = evaluate(validation, model.predict_proba(validation[FEATURES])[:, 1])
+
+    best = max(models, key=lambda name: validation_metrics[name]["average_precision"])
+    training_rows = pd.concat([train, validation], ignore_index=True)
+    models[best].fit(training_rows[FEATURES], training_rows["target"])
+    test_metrics = {
+        "constant_baseline": evaluate(test, [0] * len(test)),
+        best: evaluate(test, models[best].predict_proba(test[FEATURES])[:, 1]),
+    }
+    report = {
+        "splits": {
+            name: {
+                "rows": len(split),
+                "first_cutoff": str(split["cutoff"].min().date()),
+                "last_cutoff": str(split["cutoff"].max().date()),
+                "positive_rate": float(split["target"].mean()),
+            }
+            for name, split in (("train", train), ("validation", validation), ("test", test))
+        },
+        "selected_model": best,
+        "validation": validation_metrics,
+        "test": test_metrics,
+    }
+    if best == "catboost":
+        model_path = args.output_dir / "model.cbm"
+        models[best].save_model(str(model_path))
+    else:
+        model_path = args.output_dir / "model.joblib"
+        joblib.dump(models[best], model_path)
+    report["model_file"] = model_path.name
+    (args.output_dir / "metrics.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2))
+
+
+if __name__ == "__main__":
+    main()

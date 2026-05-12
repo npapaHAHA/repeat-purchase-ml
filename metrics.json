@@ -1,0 +1,48 @@
+{
+  "splits": {
+    "train": {
+      "rows": 35037,
+      "first_cutoff": "2010-03-02",
+      "last_cutoff": "2011-06-25",
+      "positive_rate": 0.3075034963039073
+    },
+    "validation": {
+      "rows": 3915,
+      "first_cutoff": "2011-07-25",
+      "last_cutoff": "2011-08-24",
+      "positive_rate": 0.33077905491698595
+    },
+    "test": {
+      "rows": 4377,
+      "first_cutoff": "2011-09-23",
+      "last_cutoff": "2011-10-23",
+      "positive_rate": 0.39570482065341556
+    }
+  },
+  "selected_model": "catboost",
+  "validation": {
+    "constant_baseline": {
+      "average_precision": 0.33077905491698595,
+      "roc_auc": 0.5
+    },
+    "logistic_regression": {
+      "average_precision": 0.5928933522060458,
+      "roc_auc": 0.6836658905361195
+    },
+    "catboost": {
+      "average_precision": 0.6133466138766143,
+      "roc_auc": 0.71641855050252
+    }
+  },
+  "test": {
+    "constant_baseline": {
+      "average_precision": 0.39570482065341556,
+      "roc_auc": 0.5
+    },
+    "catboost": {
+      "average_precision": 0.6313092912054865,
+      "roc_auc": 0.6833441021230524
+    }
+  },
+  "model_file": "model.cbm"
+}
